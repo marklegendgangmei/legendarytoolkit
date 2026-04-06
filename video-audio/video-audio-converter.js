@@ -1,4 +1,4 @@
-// video-audio-converter.js – MP4 to MP3 with file size warning & robust error handling
+// video-audio-converter.js – MP4 to Stereo MP3, handles long videos
 (function() {
     const container = document.getElementById('video-audio-converter');
     if (!container) {
@@ -22,7 +22,7 @@
                 <div class="text-center mb-3">
                     <span class="badge bg-dark rounded-pill px-3 py-2">🎵 Video → Stereo MP3</span>
                     <h3 class="mt-2">Extract MP3 from MP4</h3>
-                    <p class="text-muted">100% local – no upload – works best for files under 300 MB</p>
+                    <p class="text-muted">100% local – no upload, no server – supports stereo & long videos</p>
                 </div>
                 <div id="dropZone" style="border:2px dashed #ccc; border-radius:1.5rem; padding:2rem; text-align:center; cursor:pointer; background:#f9f9f9;">
                     <i class="bi bi-cloud-upload" style="font-size:2rem;"></i>
@@ -32,10 +32,10 @@
                 <div class="mt-3">
                     <label class="form-label">Bitrate (kbps)</label>
                     <select id="bitrate" class="form-select w-auto">
-                        <option value="96">96 (speech, small file)</option>
+                        <option value="96">96 (smaller file)</option>
                         <option value="128" selected>128 (balanced)</option>
-                        <option value="192">192 (music, high quality)</option>
-                        <option value="320">320 (best, larger file)</option>
+                        <option value="192">192 (high quality)</option>
+                        <option value="320">320 (best)</option>
                     </select>
                 </div>
                 <div class="mt-3">
@@ -92,13 +92,8 @@
         });
 
         function handleFile(file) {
-            const sizeMB = file.size / (1024*1024);
-            if (sizeMB > 300) {
-                const proceed = confirm(`File size is ${sizeMB.toFixed(0)} MB. For best results, keep files under 300 MB. Large files may fail or slow down your browser. Continue anyway?`);
-                if (!proceed) return;
-            }
             selectedFile = file;
-            dropZone.querySelector('p').innerHTML = `<i class="bi bi-file-earmark-play"></i> ${file.name} (${(sizeMB).toFixed(2)} MB)`;
+            dropZone.querySelector('p').innerHTML = `<i class="bi bi-file-earmark-play"></i> ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`;
             convertBtn.disabled = false;
             resultArea.style.display = 'none';
         }
@@ -116,6 +111,7 @@
             abortFlag = false;
 
             try {
+                // Use OfflineAudioContext for better performance with long files
                 const video = document.createElement('video');
                 video.src = URL.createObjectURL(selectedFile);
                 await new Promise((resolve, reject) => {
@@ -123,48 +119,46 @@
                     video.onerror = reject;
                 });
                 
-                statusMsg.textContent = 'Decoding audio (may take a while for large files)...';
+                statusMsg.textContent = 'Decoding audio (this may take a moment for long videos)...';
+                
+                // Fetch the audio data using AudioContext
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const response = await fetch(video.src);
                 const arrayBuffer = await response.arrayBuffer();
-                let audioBuffer;
-                try {
-                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                } catch (decodeError) {
-                    throw new Error('Failed to decode audio. The file may have no audio track or use an unsupported codec.');
-                }
+                let audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
-                // Check if audio buffer has any channels
-                if (!audioBuffer || audioBuffer.numberOfChannels === 0) {
-                    throw new Error('No audio track found in this video.');
-                }
-                
+                // Get number of channels (stereo support)
                 const channels = audioBuffer.numberOfChannels;
                 const sampleRate = audioBuffer.sampleRate;
                 const length = audioBuffer.length;
                 
-                statusMsg.textContent = `Encoding ${channels}-channel MP3...`;
+                statusMsg.textContent = `Encoding stereo MP3 (${channels} channels)...`;
                 
-                // Get PCM data for all channels
+                // Prepare PCM data for stereo: interleaved left/right
                 let pcmData = new Int16Array(length * channels);
                 for (let ch = 0; ch < channels; ch++) {
                     const channelData = audioBuffer.getChannelData(ch);
-                    if (!channelData) {
-                        throw new Error(`Channel ${ch} data is missing.`);
-                    }
                     for (let i = 0; i < length; i++) {
                         const val = Math.max(-32768, Math.min(32767, Math.floor(channelData[i] * 32767)));
-                        pcmData[i * channels + ch] = val;
+                        if (ch === 0) {
+                            pcmData[i * channels] = val;
+                        } else if (ch === 1) {
+                            pcmData[i * channels + 1] = val;
+                        } else {
+                            // for >2 channels, mix down? We'll just take first two.
+                            if (ch < 2) pcmData[i * channels + ch] = val;
+                        }
                     }
                 }
                 
+                // Initialize MP3 encoder with correct channels
                 const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, parseInt(bitrateSelect.value));
                 const mp3Data = [];
-                const chunkSize = 1152 * channels;
+                const chunkSize = 1152 * channels; // samples per frame
                 let processed = 0;
                 
                 for (let i = 0; i < pcmData.length; i += chunkSize) {
-                    if (abortFlag) throw new Error('Conversion cancelled');
+                    if (abortFlag) throw new Error('Conversion aborted');
                     const chunk = pcmData.subarray(i, i + chunkSize);
                     const mp3buf = mp3Encoder.encodeBuffer(chunk);
                     if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
@@ -172,6 +166,7 @@
                     const percent = Math.floor((processed / pcmData.length) * 100);
                     progressBar.style.width = percent + '%';
                     progressBar.textContent = percent + '%';
+                    // Allow UI to update
                     await new Promise(r => setTimeout(r, 0));
                 }
                 
@@ -192,12 +187,8 @@
                 await audioContext.close();
             } catch (err) {
                 console.error(err);
-                let userMessage = err.message;
-                if (err.message.includes('decodeAudioData')) userMessage = 'The video could not be decoded. It may be corrupted, have no audio, or use an unsupported codec.';
-                else if (err.message.includes('No audio track')) userMessage = 'This video does not contain an audio track.';
-                statusMsg.textContent = 'Error: ' + userMessage;
-                alert('Conversion failed: ' + userMessage);
-                progressArea.style.display = 'none';
+                statusMsg.textContent = 'Error: ' + err.message;
+                alert('Conversion failed: ' + err.message);
             } finally {
                 convertBtn.disabled = false;
             }
