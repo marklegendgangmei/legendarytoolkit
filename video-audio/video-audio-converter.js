@@ -1,4 +1,4 @@
-// video-audio-converter.js – MP4 to MP3 (robust encoding)
+// video-audio-converter.js – MP4 to MP3 (correct channel handling for lamejs)
 (function() {
     const container = document.getElementById('video-audio-converter');
     if (!container) {
@@ -132,7 +132,6 @@
                 try {
                     audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 } catch (decodeError) {
-                    console.error('decodeAudioData error:', decodeError);
                     throw new Error('Failed to decode audio. The file may have no audio track or uses an unsupported codec.');
                 }
 
@@ -144,61 +143,61 @@
                 const sampleRate = audioBuffer.sampleRate;
                 const length = audioBuffer.length;
 
-                if (length === 0) {
-                    throw new Error('Audio track has zero length.');
-                }
-
                 statusMsg.textContent = `Encoding ${channels}-channel MP3...`;
 
-                // Convert AudioBuffer to interleaved Int16 PCM
-                const pcmData = new Int16Array(length * channels);
-                for (let ch = 0; ch < channels; ch++) {
-                    const channelData = audioBuffer.getChannelData(ch);
-                    if (!channelData) {
-                        throw new Error(`Channel ${ch} data is missing.`);
-                    }
+                // Separate channel data (lamejs expects separate arrays)
+                let left = null, right = null;
+                if (channels === 1) {
+                    left = new Int16Array(length);
+                    const channelData = audioBuffer.getChannelData(0);
                     for (let i = 0; i < length; i++) {
-                        const val = Math.max(-32768, Math.min(32767, Math.floor(channelData[i] * 32767)));
-                        pcmData[i * channels + ch] = val;
+                        left[i] = Math.max(-32768, Math.min(32767, Math.floor(channelData[i] * 32767)));
                     }
-                }
-
-                if (pcmData.length === 0) {
-                    throw new Error('PCM data is empty.');
+                } else {
+                    left = new Int16Array(length);
+                    right = new Int16Array(length);
+                    const leftData = audioBuffer.getChannelData(0);
+                    const rightData = audioBuffer.getChannelData(1);
+                    for (let i = 0; i < length; i++) {
+                        left[i] = Math.max(-32768, Math.min(32767, Math.floor(leftData[i] * 32767)));
+                        right[i] = Math.max(-32768, Math.min(32767, Math.floor(rightData[i] * 32767)));
+                    }
                 }
 
                 const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, parseInt(bitrateSelect.value));
                 const mp3Data = [];
-                // Use a reasonable chunk size (samples per channel * channels)
-                const samplesPerChunk = 1152; // typical MP3 frame size
-                const chunkSize = samplesPerChunk * channels;
+                const chunkSize = 1152; // samples per channel per frame
                 let processed = 0;
 
-                for (let i = 0; i < pcmData.length; i += chunkSize) {
-                    const end = Math.min(i + chunkSize, pcmData.length);
-                    const chunk = pcmData.subarray(i, end);
-                    // Only encode if chunk has at least one sample per channel
-                    if (chunk.length >= channels) {
+                if (channels === 1) {
+                    // Mono
+                    for (let i = 0; i < length; i += chunkSize) {
+                        const chunk = left.subarray(i, i + chunkSize);
                         const mp3buf = mp3Encoder.encodeBuffer(chunk);
-                        if (mp3buf && mp3buf.length > 0) {
-                            mp3Data.push(new Int8Array(mp3buf));
-                        }
+                        if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
+                        processed += chunk.length;
+                        const percent = Math.floor((processed / length) * 100);
+                        progressBar.style.width = percent + '%';
+                        progressBar.textContent = percent + '%';
+                        await new Promise(r => setTimeout(r, 0));
                     }
-                    processed += chunk.length;
-                    const percent = Math.floor((processed / pcmData.length) * 100);
-                    progressBar.style.width = percent + '%';
-                    progressBar.textContent = percent + '%';
-                    await new Promise(r => setTimeout(r, 0));
+                } else {
+                    // Stereo
+                    for (let i = 0; i < length; i += chunkSize) {
+                        const leftChunk = left.subarray(i, i + chunkSize);
+                        const rightChunk = right.subarray(i, i + chunkSize);
+                        const mp3buf = mp3Encoder.encodeBuffer(leftChunk, rightChunk);
+                        if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
+                        processed += leftChunk.length;
+                        const percent = Math.floor((processed / length) * 100);
+                        progressBar.style.width = percent + '%';
+                        progressBar.textContent = percent + '%';
+                        await new Promise(r => setTimeout(r, 0));
+                    }
                 }
 
                 const final = mp3Encoder.flush();
-                if (final && final.length > 0) {
-                    mp3Data.push(new Int8Array(final));
-                }
-
-                if (mp3Data.length === 0) {
-                    throw new Error('No MP3 data was produced.');
-                }
+                if (final.length > 0) mp3Data.push(new Int8Array(final));
 
                 const mp3Blob = new Blob(mp3Data, { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(mp3Blob);
@@ -213,13 +212,10 @@
                 URL.revokeObjectURL(video.src);
                 await audioContext.close();
             } catch (err) {
-                console.error('Conversion error:', err);
+                console.error(err);
                 let userMessage = err.message;
-                if (err.message.includes('decodeAudioData')) {
-                    userMessage = 'The video could not be decoded. It may have no audio track or uses an unsupported codec.';
-                } else if (err.message.includes('does not contain an audio track')) {
-                    userMessage = 'This video does not contain an audio track.';
-                }
+                if (err.message.includes('decodeAudioData')) userMessage = 'The video could not be decoded. It may have no audio track or uses an unsupported codec.';
+                else if (err.message.includes('does not contain an audio track')) userMessage = 'This video does not contain an audio track.';
                 statusMsg.textContent = 'Error: ' + userMessage;
                 alert('Conversion failed: ' + userMessage);
                 progressArea.style.display = 'none';
