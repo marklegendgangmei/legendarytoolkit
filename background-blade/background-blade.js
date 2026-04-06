@@ -1,5 +1,13 @@
-// background-blade.js – standalone version of your working HTML
+// background-blade.js – standalone version of your working HTML (full)
 (function() {
+    // Ensure Bootstrap CSS is loaded
+    if (!document.querySelector('link[href*="bootstrap.min.css"]')) {
+        const bootstrapLink = document.createElement('link');
+        bootstrapLink.rel = 'stylesheet';
+        bootstrapLink.href = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css';
+        document.head.appendChild(bootstrapLink);
+    }
+
     const TARGET_ID = 'background-blade-app';
     let target = document.getElementById(TARGET_ID);
     if (!target) {
@@ -16,7 +24,7 @@
     initApp(target);
 
     function initApp(container) {
-        // ----- Inject the exact same HTML structure as your original page -----
+        // Inject the full HTML (exactly as in your original page)
         container.innerHTML = `
 <div class="container">
   <div class="glass-card p-4 p-md-5">
@@ -98,7 +106,7 @@
 <div id="brushCursor" class="brush-cursor"></div>
         `;
 
-        // ----- Inject the required CSS (exactly as in your original) -----
+        // Inject the CSS (exactly as in your original)
         const style = document.createElement('style');
         style.textContent = `
             * {
@@ -279,7 +287,7 @@
         `;
         document.head.appendChild(style);
 
-        // ----- Import map and script (dynamic import) -----
+        // Import map and main script (dynamic import)
         const importMap = document.createElement('script');
         importMap.type = 'importmap';
         importMap.textContent = JSON.stringify({
@@ -289,16 +297,14 @@
         });
         document.head.appendChild(importMap);
 
-        // Now load the main module script (exact copy of your original script, with minor adjustments for scope)
         const moduleScript = document.createElement('script');
         moduleScript.type = 'module';
         moduleScript.textContent = `
             import { AutoModel, AutoProcessor, RawImage, env } from '@huggingface/transformers';
-
             env.useBrowserCache = true;
             env.useIndexedDB = true;
 
-            // DOM elements (now inside the container)
+            // DOM elements
             const fileInput = document.getElementById('fileInput');
             const uploadZone = document.getElementById('uploadZone');
             const uploadLabel = document.getElementById('uploadLabel');
@@ -327,14 +333,10 @@
             let model = null, processor = null;
             let currentProcessedBlob = null;
             let currentOriginalFile = null;
-
-            let workingCanvas = null;
-            let originalProcessedCanvas = null;
-            let undoStack = [];
-            let redoStack = [];
+            let workingCanvas = null, originalProcessedCanvas = null;
+            let undoStack = [], redoStack = [];
             let isDrawing = false;
             let lastX = 0, lastY = 0;
-
             const brushCursor = document.getElementById('brushCursor');
             let currentBrushSize = 20;
 
@@ -344,20 +346,15 @@
                 const displayWidth = rect.width > 0 ? rect.width : resultCanvas.offsetWidth;
                 return displayWidth > 0 ? resultCanvas.width / displayWidth : 1;
             }
-
             function updateBrushCursorSize() {
                 const scale = getCanvasDisplayScale();
                 const cssSize = currentBrushSize / scale;
                 brushCursor.style.width = cssSize + 'px';
                 brushCursor.style.height = cssSize + 'px';
             }
-
             function refreshCursorAfterDisplay() {
-                setTimeout(() => {
-                    if (resultColumn.style.display === 'block') updateBrushCursorSize();
-                }, 50);
+                setTimeout(() => { if (resultColumn.style.display === 'block') updateBrushCursorSize(); }, 50);
             }
-
             function showBrushCursor() { brushCursor.style.display = 'block'; }
             function hideBrushCursor() { brushCursor.style.display = 'none'; }
             function moveBrushCursor(e) {
@@ -365,7 +362,6 @@
                 brushCursor.style.left = e.clientX + 'px';
                 brushCursor.style.top = e.clientY + 'px';
             }
-
             resultCanvas.addEventListener('mouseenter', showBrushCursor);
             resultCanvas.addEventListener('mouseleave', hideBrushCursor);
             resultCanvas.addEventListener('mousemove', moveBrushCursor);
@@ -374,59 +370,52 @@
                 brushSizeValue.innerText = currentBrushSize;
                 updateBrushCursorSize();
             });
-            window.addEventListener('resize', () => {
-                if (resultColumn.style.display === 'block') updateBrushCursorSize();
-            });
+            window.addEventListener('resize', () => { if (resultColumn.style.display === 'block') updateBrushCursorSize(); });
             updateBrushCursorSize();
 
-            // Eraser functions (exact same)
             function eraseCircle(x, y, radius) {
                 const ctx = workingCanvas.getContext('2d');
                 const imageData = ctx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
                 const data = imageData.data;
-                const width = workingCanvas.width;
-                const height = workingCanvas.height;
-                const radiusSq = radius * radius;
+                const w = workingCanvas.width, h = workingCanvas.height;
+                const r2 = radius * radius;
                 const xMin = Math.max(0, Math.floor(x - radius));
-                const xMax = Math.min(width, Math.ceil(x + radius));
+                const xMax = Math.min(w, Math.ceil(x + radius));
                 const yMin = Math.max(0, Math.floor(y - radius));
-                const yMax = Math.min(height, Math.ceil(y + radius));
+                const yMax = Math.min(h, Math.ceil(y + radius));
                 for (let py = yMin; py < yMax; py++) {
                     for (let px = xMin; px < xMax; px++) {
                         const dx = px - x, dy = py - y;
-                        if (dx*dx + dy*dy <= radiusSq) {
-                            const idx = (py * width + px) * 4 + 3;
+                        if (dx*dx + dy*dy <= r2) {
+                            const idx = (py * w + px) * 4 + 3;
                             data[idx] = 0;
                         }
                     }
                 }
                 ctx.putImageData(imageData, 0, 0);
             }
-
             function eraseLine(x0, y0, x1, y1, radius) {
                 const ctx = workingCanvas.getContext('2d');
                 const imageData = ctx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
                 const data = imageData.data;
-                const width = workingCanvas.width;
-                const height = workingCanvas.height;
-                const radiusSq = radius * radius;
+                const w = workingCanvas.width, h = workingCanvas.height;
+                const r2 = radius * radius;
                 const dx = x1 - x0, dy = y1 - y0;
-                const distance = Math.hypot(dx, dy);
-                if (distance < 0.001) { eraseCircle(x0, y0, radius); return; }
-                const steps = Math.ceil(distance / (radius * 0.5));
+                const dist = Math.hypot(dx, dy);
+                if (dist < 0.001) { eraseCircle(x0, y0, radius); return; }
+                const steps = Math.ceil(dist / (radius * 0.5));
                 for (let t = 0; t <= steps; t++) {
                     const frac = t / steps;
-                    const cx = x0 + dx * frac;
-                    const cy = y0 + dy * frac;
+                    const cx = x0 + dx * frac, cy = y0 + dy * frac;
                     const xMin = Math.max(0, Math.floor(cx - radius));
-                    const xMax = Math.min(width, Math.ceil(cx + radius));
+                    const xMax = Math.min(w, Math.ceil(cx + radius));
                     const yMin = Math.max(0, Math.floor(cy - radius));
-                    const yMax = Math.min(height, Math.ceil(cy + radius));
+                    const yMax = Math.min(h, Math.ceil(cy + radius));
                     for (let py = yMin; py < yMax; py++) {
                         for (let px = xMin; px < xMax; px++) {
                             const dxc = px - cx, dyc = py - cy;
-                            if (dxc*dxc + dyc*dyc <= radiusSq) {
-                                const idx = (py * width + px) * 4 + 3;
+                            if (dxc*dxc + dyc*dyc <= r2) {
+                                const idx = (py * w + px) * 4 + 3;
                                 data[idx] = 0;
                             }
                         }
@@ -434,7 +423,6 @@
                 }
                 ctx.putImageData(imageData, 0, 0);
             }
-
             function startDrawing(e) {
                 e.preventDefault();
                 isDrawing = true;
@@ -444,7 +432,6 @@
                 saveToUndo();
                 updateDisplayCanvas();
             }
-
             function draw(e) {
                 if (!isDrawing) return;
                 e.preventDefault();
@@ -454,9 +441,7 @@
                 lastX = x; lastY = y;
                 updateDisplayCanvas();
             }
-
             function stopDrawing() { isDrawing = false; }
-
             function getCanvasCoords(e) {
                 const rect = resultCanvas.getBoundingClientRect();
                 const scaleX = resultCanvas.width / rect.width;
@@ -470,7 +455,6 @@
                 y = Math.min(Math.max(0, y), resultCanvas.height);
                 return { x, y };
             }
-
             function setStatus(msg, isError = false, showSpinner = false) {
                 statusDiv.innerHTML = '';
                 if (showSpinner) {
@@ -483,7 +467,6 @@
                 if (isError) span.style.color = '#dc2626';
                 statusDiv.appendChild(span);
             }
-
             function saveToUndo() {
                 if (!workingCanvas) return;
                 const imgData = workingCanvas.getContext('2d').getImageData(0, 0, workingCanvas.width, workingCanvas.height);
@@ -493,29 +476,26 @@
                 redoBtn.disabled = true;
                 if (undoStack.length > 50) undoStack.shift();
             }
-
             function undo() {
                 if (undoStack.length === 0) return;
-                const current = workingCanvas.getContext('2d').getImageData(0, 0, workingCanvas.width, workingCanvas.height);
-                redoStack.push(current);
+                const curr = workingCanvas.getContext('2d').getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+                redoStack.push(curr);
                 const prev = undoStack.pop();
                 workingCanvas.getContext('2d').putImageData(prev, 0, 0);
                 redoBtn.disabled = false;
                 if (undoStack.length === 0) undoBtn.disabled = true;
                 updateDisplayCanvas();
             }
-
             function redo() {
                 if (redoStack.length === 0) return;
-                const current = workingCanvas.getContext('2d').getImageData(0, 0, workingCanvas.width, workingCanvas.height);
-                undoStack.push(current);
+                const curr = workingCanvas.getContext('2d').getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+                undoStack.push(curr);
                 const next = redoStack.pop();
                 workingCanvas.getContext('2d').putImageData(next, 0, 0);
                 undoBtn.disabled = false;
                 if (redoStack.length === 0) redoBtn.disabled = true;
                 updateDisplayCanvas();
             }
-
             function resetEdits() {
                 if (!workingCanvas || !originalProcessedCanvas) return;
                 saveToUndo();
@@ -524,7 +504,6 @@
                 ctx.drawImage(originalProcessedCanvas, 0, 0);
                 updateDisplayCanvas();
             }
-
             function updateDisplayCanvas() {
                 if (!workingCanvas) return;
                 const ctx = resultCanvas.getContext('2d');
@@ -533,10 +512,9 @@
                 ctx.drawImage(workingCanvas, 0, 0);
                 workingCanvas.toBlob(blob => { currentProcessedBlob = blob; downloadBtn.disabled = false; }, 'image/png');
             }
-
             function cleanMask(canvas) {
                 const ctx = canvas.getContext('2d');
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height, { willReadFrequently: true });
                 const data = imgData.data;
                 const w = canvas.width, h = canvas.height;
                 const alpha = new Uint8Array(w * h);
@@ -585,7 +563,6 @@
                 ctx.putImageData(imgData, 0, 0);
                 return canvas;
             }
-
             async function preloadModel() {
                 try {
                     setStatus('📦 Preloading model for faster future use...', false, true);
@@ -601,12 +578,8 @@
                     processor = cachedProcessor;
                     setStatus('✅ Model ready (cached). Upload an image.', false, false);
                     return true;
-                } catch (e) {
-                    console.warn('Preload failed, will load on demand', e);
-                    return false;
-                }
+                } catch (e) { console.warn('Preload failed', e); return false; }
             }
-
             async function processAIMode(file) {
                 if (!model || !processor) {
                     setStatus('🧠 Loading AI engine (first time ~45MB, then cached)...', false, true);
@@ -658,7 +631,6 @@
                 }
                 return canvas;
             }
-
             function chromaKeyRemoval(imgElement, sensitivity, smoothing) {
                 const canvas = document.createElement('canvas');
                 canvas.width = imgElement.width;
@@ -686,13 +658,9 @@
                 }
                 return canvas;
             }
-
             async function showOriginalAndProcess(file) {
                 if (!file) return;
-                if (file.size > 8*1024*1024) {
-                    setStatus('❌ Max 8MB', true);
-                    return;
-                }
+                if (file.size > 8*1024*1024) { setStatus('❌ Max 8MB', true); return; }
                 setStatus('📷 Loading preview...', false, true);
                 const img = await loadImageToCanvas(file, originalCanvas, 500);
                 originalColumn.style.display = 'block';
@@ -725,7 +693,6 @@
                 updateDisplayCanvas();
                 setStatus('✅ Ready. Use eraser to clean up leftovers.', false);
             }
-
             function loadImageToCanvas(file, canvas, maxDim=500) {
                 return new Promise((resolve, reject) => {
                     const img = new Image();
@@ -744,17 +711,12 @@
                     img.src = URL.createObjectURL(file);
                 });
             }
-
             function handleFile(file) {
                 const allowed = ['image/jpeg','image/png','image/webp'];
-                if (!allowed.includes(file.type)) {
-                    setStatus('❌ Only JPEG, PNG, WebP', true);
-                    return;
-                }
+                if (!allowed.includes(file.type)) { setStatus('❌ Only JPEG, PNG, WebP', true); return; }
                 currentOriginalFile = file;
                 showOriginalAndProcess(file);
             }
-
             // Event listeners
             uploadLabel.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
             uploadZone.addEventListener('dragover', e => e.preventDefault());
@@ -777,7 +739,6 @@
             undoBtn.addEventListener('click', undo);
             redoBtn.addEventListener('click', redo);
             resetEditsBtn.addEventListener('click', resetEdits);
-
             resultCanvas.addEventListener('mousedown', startDrawing);
             resultCanvas.addEventListener('mousemove', draw);
             resultCanvas.addEventListener('mouseup', stopDrawing);
@@ -785,7 +746,6 @@
             resultCanvas.addEventListener('touchstart', startDrawing);
             resultCanvas.addEventListener('touchmove', draw);
             resultCanvas.addEventListener('touchend', stopDrawing);
-
             aiModeBtn.addEventListener('click', () => {
                 currentMode = 'ai';
                 aiModeBtn.classList.add('btn-dark-custom'); aiModeBtn.classList.remove('btn-outline-custom');
@@ -800,7 +760,6 @@
                 chromaControls.style.display = 'block';
                 if (currentOriginalFile) showOriginalAndProcess(currentOriginalFile);
             });
-
             function syncSensitivity(value) {
                 sensitivitySlider.value = value;
                 sensitivityNumber.value = value;
@@ -817,7 +776,6 @@
             sensitivityNumber.addEventListener('input', (e) => syncSensitivity(e.target.value));
             smoothingSlider.addEventListener('input', (e) => syncSmoothing(e.target.value));
             smoothingNumber.addEventListener('input', (e) => syncSmoothing(e.target.value));
-
             preloadModel();
         `;
         document.body.appendChild(moduleScript);
