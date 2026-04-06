@@ -1,12 +1,8 @@
-// background-blade.js
-// Self‑contained Background Eraser Pro – injects into a target div
-
+// background-blade.js (with brush cursor restored)
 (function() {
-    // Wait for the target div to exist
     const targetId = 'background-blade-app';
     let target = document.getElementById(targetId);
     if (!target) {
-        // If not found, retry after a short delay
         const interval = setInterval(() => {
             target = document.getElementById(targetId);
             if (target) {
@@ -19,10 +15,9 @@
     initApp(target);
 
     async function initApp(container) {
-        // --- Import Transformers.js dynamically ---
         const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0/+esm');
 
-        // --- HTML structure (without any conflicting CSS classes) ---
+        // --- HTML structure (same as before, plus a div for the brush cursor) ---
         container.innerHTML = `
             <div class="bg-blade-wrapper">
                 <div class="bg-blade-mode-selector">
@@ -69,9 +64,11 @@
                 </div>
                 <div class="bg-blade-footer">🔒 Zero uploads – runs entirely on your device. No watermarks.</div>
             </div>
+            <!-- Floating brush cursor (will be positioned absolutely) -->
+            <div id="bg-blade-brush-cursor" style="position: fixed; width: 20px; height: 20px; border: 2px solid black; border-radius: 50%; background: rgba(255,255,255,0.3); pointer-events: none; z-index: 9999; transform: translate(-50%, -50%); display: none;"></div>
         `;
 
-        // --- CSS (scoped to this tool only) ---
+        // --- CSS (scoped, includes cursor styling) ---
         const style = document.createElement('style');
         style.textContent = `
             .bg-blade-wrapper {
@@ -81,6 +78,7 @@
                 padding: 1.5rem;
                 box-shadow: 0 8px 20px rgba(0,0,0,0.08);
                 margin: 1rem 0;
+                position: relative;
             }
             .bg-blade-mode-selector { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
             .bg-blade-btn-active {
@@ -122,7 +120,7 @@
         `;
         container.appendChild(style);
 
-        // --- DOM references (with unique IDs) ---
+        // --- DOM references ---
         const fileInput = document.getElementById('bg-blade-file-input');
         const uploadZone = document.getElementById('bg-blade-upload-zone');
         const uploadLabel = document.getElementById('bg-blade-upload-label');
@@ -144,6 +142,7 @@
         const redoBtn = document.getElementById('bg-blade-redo');
         const resetBtn = document.getElementById('bg-blade-reset');
         const downloadBtn = document.getElementById('bg-blade-download');
+        const brushCursor = document.getElementById('bg-blade-brush-cursor');
 
         let currentMode = 'ai';
         let model = null, processor = null;
@@ -155,7 +154,37 @@
         let currentProcessedBlob = null;
         let currentFile = null;
 
-        // Helper: update status
+        // --- Brush cursor logic (restored) ---
+        function updateBrushCursorSize() {
+            brushCursor.style.width = currentBrushSize + 'px';
+            brushCursor.style.height = currentBrushSize + 'px';
+        }
+
+        function showBrushCursor() {
+            brushCursor.style.display = 'block';
+        }
+
+        function hideBrushCursor() {
+            brushCursor.style.display = 'none';
+        }
+
+        function moveBrushCursor(e) {
+            if (resultCol.style.display !== 'block') return;
+            brushCursor.style.left = e.clientX + 'px';
+            brushCursor.style.top = e.clientY + 'px';
+        }
+
+        resultCanvas.addEventListener('mouseenter', showBrushCursor);
+        resultCanvas.addEventListener('mouseleave', hideBrushCursor);
+        resultCanvas.addEventListener('mousemove', moveBrushCursor);
+        brushSlider.addEventListener('input', () => {
+            currentBrushSize = parseInt(brushSlider.value);
+            brushVal.innerText = currentBrushSize;
+            updateBrushCursorSize();
+        });
+        updateBrushCursorSize();
+
+        // --- Helper functions (same as before) ---
         function setStatus(msg, isError = false, showSpinner = false) {
             statusDiv.innerHTML = '';
             if (showSpinner) {
@@ -170,7 +199,6 @@
             statusDiv.appendChild(span);
         }
 
-        // Helper: load image to canvas (preview)
         function loadImageToCanvas(file, canvas, maxDim = 500) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
@@ -192,7 +220,7 @@
             });
         }
 
-        // --- Eraser functions (direct pixel manipulation) ---
+        // --- Eraser functions (pixel‑accurate) ---
         function eraseCircle(x, y, radius) {
             const ctx = workingCanvas.getContext('2d');
             const imgData = ctx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
@@ -332,7 +360,7 @@
             workingCanvas.toBlob(blob => { currentProcessedBlob = blob; downloadBtn.disabled = false; }, 'image/png');
         }
 
-        // --- Artifact removal (same as before) ---
+        // --- Artifact removal (median + morphological close) ---
         function cleanMask(canvas) {
             const ctx = canvas.getContext('2d');
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -340,7 +368,6 @@
             const w = canvas.width, h = canvas.height;
             const alpha = new Uint8Array(w*h);
             for (let i=0; i<w*h; i++) alpha[i] = data[i*4+3];
-            // median 5x5
             const filtered = new Uint8Array(w*h);
             for (let y=0; y<h; y++) {
                 for (let x=0; x<w; x++) {
@@ -355,7 +382,6 @@
                     filtered[y*w+x] = neighbors[Math.floor(neighbors.length/2)];
                 }
             }
-            // morphological close
             const eroded = new Uint8Array(w*h);
             for (let y=0; y<h; y++) {
                 for (let x=0; x<w; x++) {
@@ -524,7 +550,6 @@
                 URL.revokeObjectURL(a.href);
             }
         });
-        brushSlider.addEventListener('input', () => { currentBrushSize = parseInt(brushSlider.value); brushVal.innerText = currentBrushSize; });
         undoBtn.addEventListener('click', undo);
         redoBtn.addEventListener('click', redo);
         resetBtn.addEventListener('click', resetEdits);
@@ -554,7 +579,7 @@
         sensSlider.addEventListener('input', () => { sensVal.innerText = sensSlider.value; if (currentMode==='chroma' && currentFile) processImage(currentFile); });
         smoothSlider.addEventListener('input', () => { smoothVal.innerText = smoothSlider.value; if (currentMode==='chroma' && currentFile) processImage(currentFile); });
 
-        // Add spinner animation
+        // Spinner animation
         const spinStyle = document.createElement('style');
         spinStyle.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
         document.head.appendChild(spinStyle);
