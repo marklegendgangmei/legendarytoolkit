@@ -1,4 +1,4 @@
-// video-audio-converter.js – MP4 to MP3 (works for files up to ~300MB, warns for larger)
+// video-audio-converter.js – MP4 to MP3 (reliable for files up to 250 MB)
 (function() {
     const container = document.getElementById('video-audio-converter');
     if (!container) {
@@ -22,11 +22,11 @@
                 <div class="text-center mb-3">
                     <span class="badge bg-dark rounded-pill px-3 py-2">🎵 Video → Stereo MP3</span>
                     <h3 class="mt-2">Extract MP3 from MP4</h3>
-                    <p class="text-muted">100% local – no upload – best for files under 300 MB</p>
+                    <p class="text-muted">100% local – no upload – works for files up to 250 MB</p>
                 </div>
                 <div id="dropZone" style="border:2px dashed #ccc; border-radius:1.5rem; padding:2rem; text-align:center; cursor:pointer; background:#f9f9f9;">
                     <i class="bi bi-cloud-upload" style="font-size:2rem;"></i>
-                    <p class="mt-2">Click or drag MP4 file here</p>
+                    <p class="mt-2">Click or drag MP4 file here (max 250 MB)</p>
                     <input type="file" id="fileInput" accept="video/mp4" style="display:none;">
                 </div>
                 <div class="mt-3">
@@ -53,6 +53,9 @@
                 </div>
                 <div class="mt-3 small text-muted text-center">
                     <i class="bi bi-shield-check"></i> Your file never leaves your device
+                </div>
+                <div class="mt-2 small text-warning text-center">
+                    ⚡ For videos larger than 250 MB, use the free app <a href="https://www.videolan.org/vlc/" target="_blank">VLC</a> (Menu: Media → Convert/Save)
                 </div>
             </div>
         `;
@@ -92,9 +95,9 @@
 
         function handleFile(file) {
             const sizeMB = file.size / (1024 * 1024);
-            if (sizeMB > 300) {
-                const confirmLarge = confirm(`Your file is ${sizeMB.toFixed(0)} MB. This converter works best for files under 300 MB. Larger files may fail or cause your browser to become unresponsive.\n\nFor videos over 300 MB, we recommend using the free desktop app VLC (https://www.videolan.org/vlc/) which can extract audio reliably.\n\nContinue anyway?`);
-                if (!confirmLarge) return;
+            if (sizeMB > 250) {
+                alert(`File is ${sizeMB.toFixed(0)} MB. This converter only supports files up to 250 MB.\n\nFor larger videos, please use VLC (free):\n1. Open VLC → Media → Convert/Save\n2. Add your file → Convert/Save\n3. Choose Audio – MP3 profile\n4. Start`);
+                return;
             }
             selectedFile = file;
             dropZone.querySelector('p').innerHTML = `<i class="bi bi-file-earmark-play"></i> ${file.name} (${(sizeMB).toFixed(2)} MB)`;
@@ -129,14 +132,27 @@
                 try {
                     audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 } catch (decodeError) {
+                    console.error('decodeAudioData error:', decodeError);
                     throw new Error('Failed to decode audio. The file may have no audio track or uses an unsupported codec.');
                 }
 
-                if (!audioBuffer || audioBuffer.numberOfChannels === 0) {
-                    throw new Error('No audio track found in this video.');
+                // Check if audioBuffer is valid and has channels
+                if (!audioBuffer) {
+                    throw new Error('No audio data found in this video.');
+                }
+                const numChannels = audioBuffer.numberOfChannels;
+                if (numChannels === 0) {
+                    throw new Error('This video does not contain an audio track.');
                 }
 
-                const channels = audioBuffer.numberOfChannels;
+                // Verify that getChannelData works for each channel
+                for (let ch = 0; ch < numChannels; ch++) {
+                    if (!audioBuffer.getChannelData(ch)) {
+                        throw new Error(`Channel ${ch} data is missing.`);
+                    }
+                }
+
+                const channels = numChannels;
                 const sampleRate = audioBuffer.sampleRate;
                 const length = audioBuffer.length;
 
@@ -184,7 +200,7 @@
                 URL.revokeObjectURL(video.src);
                 await audioContext.close();
             } catch (err) {
-                console.error(err);
+                console.error('Conversion error:', err);
                 let userMessage = err.message;
                 if (err.message.includes('decodeAudioData')) userMessage = 'The video could not be decoded. It may be corrupted, have no audio, or use an unsupported codec.';
                 else if (err.message.includes('No audio track')) userMessage = 'This video does not contain an audio track.';
