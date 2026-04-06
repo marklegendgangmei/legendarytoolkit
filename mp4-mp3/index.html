@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>MP4 to MP3 Converter | Legendary Toolkit</title>
+  <!-- Bootstrap 5 CSS + Icons (optional) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <!-- Google Fonts: Inter + Space Grotesk -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================
+       legendarytoolkit.com - Main Stylesheet (custom)
+       ============================================ */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #fefefe;
+      color: #111;
+      scroll-behavior: smooth;
+      overflow-x: hidden;
+    }
+    h1, h2, h3, h4, .display-heading, .navbar-brand, .btn, .card-title, .footer-logo {
+      font-family: 'Space Grotesk', monospace;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+    .hero-gradient {
+      background: radial-gradient(circle at 80% 20%, rgba(255,245,235,0.8) 0%, rgba(255,255,255,1) 100%);
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(0,0,0,0.05);
+      border-radius: 2rem;
+      transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+    }
+    .glass-card:hover {
+      transform: translateY(-6px);
+      background: rgba(255, 255, 255, 0.95);
+      border-color: rgba(0,0,0,0.1);
+      box-shadow: 0 25px 40px -18px rgba(0,0,0,0.2);
+    }
+    .btn-modern {
+      border-radius: 60px;
+      padding: 0.75rem 2rem;
+      font-weight: 600;
+      transition: all 0.25s ease;
+      font-family: 'Space Grotesk', monospace;
+      letter-spacing: -0.2px;
+    }
+    .btn-dark-custom {
+      background: #0a0a0a;
+      color: white;
+      border: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .btn-dark-custom:hover {
+      background: #2c2c2c;
+      transform: scale(1.02);
+      box-shadow: 0 12px 22px -12px rgba(0,0,0,0.2);
+      color: white;
+    }
+    .btn-outline-custom {
+      border: 1.5px solid #111;
+      background: transparent;
+      color: #111;
+    }
+    .btn-outline-custom:hover {
+      background: #111;
+      color: white;
+      border-color: #111;
+    }
+    .section-title {
+      font-size: 3rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .badge-soft {
+      background: #eaeef3;
+      color: #1e2a3a;
+      border-radius: 40px;
+      padding: 0.4rem 1rem;
+      font-weight: 500;
+      font-size: 0.8rem;
+    }
+    .contact-input, .form-select-custom {
+      border: 1px solid #e0e0e0;
+      border-radius: 1rem;
+      padding: 0.875rem 1.25rem;
+      transition: all 0.2s ease;
+    }
+    .contact-input:focus, .form-select-custom:focus {
+      border-color: #0a0a0a;
+      box-shadow: 0 0 0 3px rgba(10,10,10,0.1);
+      outline: none;
+    }
+    .drop-area {
+      border: 2px dashed #ccc;
+      border-radius: 2rem;
+      padding: 2.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .drop-area.dragover {
+      border-color: #0a0a0a;
+      background: rgba(0,0,0,0.02);
+    }
+    .progress-bar-custom {
+      height: 0.6rem;
+      border-radius: 1rem;
+      background-color: #e9ecef;
+    }
+    .progress-bar-custom .progress-bar {
+      background-color: #0a0a0a;
+      border-radius: 1rem;
+    }
+    @media (max-width: 768px) {
+      .section-title { font-size: 2.4rem; }
+    }
+  </style>
+</head>
+<body class="hero-gradient" style="min-height: 100vh; padding: 2rem 1rem;">
+
+<div class="container py-4">
+  <div class="text-center mb-5">
+    <span class="badge-soft mb-3">⚡ client‑side · 100% private</span>
+    <h1 class="display-4 fw-bold">MP4 → MP3 <br class="d-md-none">converter</h1>
+    <p class="lead text-secondary">Drag & drop any video, extract high‑quality MP3. <br>Your files never leave your device.</p>
+  </div>
+
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="glass-card p-4 p-md-5">
+        
+        <!-- Drop zone + file input -->
+        <div id="drop" class="drop-area mb-4">
+          <i class="bi bi-cloud-upload fs-1"></i>
+          <p class="mt-2 mb-0 fw-semibold">Click or drag MP4 file here</p>
+          <small class="text-muted">max ~500MB (browser memory limit)</small>
+          <input type="file" id="fileInput" accept="video/mp4,.mp4" class="d-none">
+        </div>
+
+        <!-- Bitrate selector -->
+        <div class="mb-4">
+          <label class="form-label fw-semibold">🎵 Audio quality (bitrate)</label>
+          <select id="bitrate" class="form-select form-select-custom w-auto">
+            <option value="96k">96 kbps (smaller file)</option>
+            <option value="128k" selected>128 kbps (good balance)</option>
+            <option value="192k">192 kbps (high quality)</option>
+            <option value="320k">320 kbps (best)</option>
+          </select>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="d-flex flex-wrap gap-3 mb-4">
+          <button id="convertBtn" class="btn btn-dark-custom btn-modern" disabled>⬇️ Convert to MP3</button>
+          <button id="cancelBtn" class="btn btn-outline-custom btn-modern" disabled>✖ Cancel</button>
+        </div>
+
+        <!-- Progress area (hidden initially) -->
+        <div id="progressWrap" class="d-none mb-4">
+          <div class="d-flex justify-content-between small mb-1">
+            <span id="statusText">Preparing...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress progress-bar-custom">
+            <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Result area (hidden until conversion done) -->
+        <div id="result" class="d-none mt-4 pt-3 border-top">
+          <h5 class="fw-bold">✅ Conversion complete</h5>
+          <audio id="audioPreview" controls class="w-100 mb-3" style="border-radius: 2rem;"></audio>
+          <a id="downloadLink" class="btn btn-dark-custom btn-modern w-100" download>💾 Download MP3</a>
+        </div>
+
+        <div class="alert alert-light mt-4 small text-secondary">
+          <i class="bi bi-shield-lock"></i> Fully client‑side · No upload · Powered by FFmpeg.wasm
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FFmpeg.wasm (modern UMD) -->
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
+<script src="https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js"></script>
+
+<script>
+  (function() {
+    // DOM elements
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('fileInput');
+    const convertBtn = document.getElementById('convertBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const bitrateSelect = document.getElementById('bitrate');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressBar = document.getElementById('progressBar');
+    const progressPercent = document.getElementById('progressPercent');
+    const statusText = document.getElementById('statusText');
+    const resultDiv = document.getElementById('result');
+    const downloadLink = document.getElementById('downloadLink');
+    const audioPreview = document.getElementById('audioPreview');
+
+    let selectedFile = null;
+    let ffmpeg = null;          // FFmpeg instance
+    let isConverting = false;
+    let abortController = null; // to signal abort (if possible)
+    let coreLoaded = false;
+
+    // ---- UI helpers ----
+    function updateDropText(text) {
+      const p = drop.querySelector('p');
+      if (p) p.textContent = text;
+    }
+
+    function handleFileSelection(file) {
+      if (!file) return;
+      if (!file.type.startsWith('video/') && !file.name.toLowerCase().endsWith('.mp4')) {
+        if (!confirm('Selected file is not an MP4 video. Attempt conversion anyway?')) return;
+      }
+      selectedFile = file;
+      updateDropText(`📁 ${file.name} (${(file.size / (1024*1024)).toFixed(2)} MB)`);
+      convertBtn.disabled = false;
+      resultDiv.classList.add('d-none');
+      audioPreview.src = '';
+      downloadLink.removeAttribute('href');
+    }
+
+    // Drag & drop handlers
+    drop.addEventListener('click', () => fileInput.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('dragover'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('dragover');
+      const f = e.dataTransfer.files[0];
+      if (f) handleFileSelection(f);
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) handleFileSelection(e.target.files[0]);
+    });
+
+    // ---- FFmpeg lazy load & conversion ----
+    async function loadFFmpeg() {
+      if (ffmpeg && coreLoaded) return ffmpeg;
+      
+      statusText.innerText = '⏳ Loading FFmpeg engine (first time only)...';
+      progressWrap.classList.remove('d-none');
+      progressBar.style.width = '5%';
+      progressPercent.innerText = '5%';
+      
+      // Create new FFmpeg instance
+      const { FFmpeg } = window.FFmpeg;
+      ffmpeg = new FFmpeg();
+      
+      // Progress handler
+      ffmpeg.on('progress', ({ progress, time }) => {
+        const percent = Math.round(progress * 100);
+        progressBar.style.width = percent + '%';
+        progressPercent.innerText = percent + '%';
+        statusText.innerText = `⚙️ Converting... ${percent}%`;
+      });
+      
+      // Load core (using CDN wasm)
+      const coreURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js';
+      await ffmpeg.load({
+        coreURL,
+        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+      });
+      coreLoaded = true;
+      statusText.innerText = '✅ FFmpeg ready. Starting conversion...';
+      return ffmpeg;
+    }
+
+    async function startConversion() {
+      if (!selectedFile) {
+        alert('Please select an MP4 file first.');
+        return;
+      }
+      if (isConverting) return;
+      
+      isConverting = true;
+      convertBtn.disabled = true;
+      cancelBtn.disabled = false;
+      progressWrap.classList.remove('d-none');
+      progressBar.style.width = '0%';
+      progressPercent.innerText = '0%';
+      statusText.innerText = 'Preparing file...';
+      resultDiv.classList.add('d-none');
+      
+      // Abort controller (FFmpeg.wasm doesn't support true abort, but we'll use a flag)
+      abortController = new AbortController();
+      let aborted = false;
+      
+      const abortHandler = () => {
+        aborted = true;
+        statusText.innerText = '❌ Cancelled by user.';
+        progressWrap.classList.add('d-none');
+        convertBtn.disabled = false;
+        cancelBtn.disabled = true;
+        isConverting = false;
+      };
+      cancelBtn.onclick = () => {
+        if (isConverting) {
+          abortHandler();
+          // force reject any ongoing step?
+          if (ffmpeg) {
+            // no direct kill, but we can reset ffmpeg instance to break out
+            ffmpeg.terminate?.(); // experimental, but prevents further work
+            ffmpeg = null;
+            coreLoaded = false;
+          }
+        }
+      };
+      
+      try {
+        const ff = await loadFFmpeg();
+        if (aborted) return;
+        
+        statusText.innerText = '📂 Writing video to virtual memory...';
+        // Write file to FFmpeg virtual FS
+        const fileData = new Uint8Array(await selectedFile.arrayBuffer());
+        ff.FS('writeFile', 'input.mp4', fileData);
+        
+        const bitrate = bitrateSelect.value;
+        statusText.innerText = `🎞️ Extracting audio (${bitrate})...`;
+        
+        // Run FFmpeg command: extract audio, encode to mp3
+        await ff.exec([
+          '-i', 'input.mp4',
+          '-vn',           // no video
+          '-ab', bitrate,
+          '-map', 'a',     // select audio stream
+          '-y',            // overwrite output
+          'output.mp3'
+        ]);
+        
+        if (aborted) return;
+        
+        statusText.innerText = '📀 Reading MP3 data...';
+        const outData = ff.FS('readFile', 'output.mp3');
+        const mp3Blob = new Blob([outData.buffer], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(mp3Blob);
+        
+        const originalName = selectedFile.name.replace(/\.[^/.]+$/, '') || 'converted';
+        downloadLink.href = url;
+        downloadLink.download = `${originalName}.mp3`;
+        downloadLink.textContent = `💾 Download MP3 (${(mp3Blob.size / 1024).toFixed(1)} KB)`;
+        audioPreview.src = url;
+        
+        resultDiv.classList.remove('d-none');
+        statusText.innerText = '✅ Done! Your MP3 is ready.';
+        progressBar.style.width = '100%';
+        progressPercent.innerText = '100%';
+        
+        // Cleanup virtual files to free memory
+        ff.FS('unlink', 'input.mp4');
+        ff.FS('unlink', 'output.mp3');
+        
+      } catch (err) {
+        console.error(err);
+        statusText.innerText = `❌ Error: ${err.message || err}`;
+        alert('Conversion failed. Check console or try a smaller file.\n' + err.message);
+        progressWrap.classList.add('d-none');
+      } finally {
+        isConverting = false;
+        convertBtn.disabled = false;
+        cancelBtn.disabled = true;
+        cancelBtn.onclick = null; // reset
+        // if ffmpeg was terminated, reload on next attempt
+        if (!ffmpeg) coreLoaded = false;
+      }
+    }
+    
+    convertBtn.addEventListener('click', startConversion);
+    
+    // initial UI state
+    convertBtn.disabled = true;
+    cancelBtn.disabled = true;
+    updateDropText('📂 Drop MP4 file or click');
+  })();
+</script>
+</body>
+</html>
