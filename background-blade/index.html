@@ -296,7 +296,11 @@
 </script>
 
 <script type="module">
-  import { AutoModel, AutoProcessor, RawImage } from '@huggingface/transformers';
+  import { AutoModel, AutoProcessor, RawImage, env } from '@huggingface/transformers';
+
+  // ----- FORCE CACHING -----
+  env.useBrowserCache = true;   // Use Cache API (persistent)
+  env.useIndexedDB = true;      // Fallback to IndexedDB for reliability
 
   // DOM elements
   const fileInput = document.getElementById('fileInput');
@@ -339,27 +343,21 @@
   const brushCursor = document.getElementById('brushCursor');
   let currentBrushSize = 20; // diameter in canvas pixels
 
-  // === FIXED: Get canvas display scale for accurate cursor sizing ===
   function getCanvasDisplayScale() {
     if (!resultCanvas || resultColumn.style.display !== 'block') return 1;
     const rect = resultCanvas.getBoundingClientRect();
-    // Use offsetWidth as fallback if getBoundingClientRect returns 0
     const displayWidth = rect.width > 0 ? rect.width : resultCanvas.offsetWidth;
     return displayWidth > 0 ? resultCanvas.width / displayWidth : 1;
   }
 
-  // === FIXED: Update cursor size accounting for canvas scaling ===
   function updateBrushCursorSize() {
     const scale = getCanvasDisplayScale();
-    // Convert canvas pixels to CSS pixels for visual match
     const cssSize = currentBrushSize / scale;
     brushCursor.style.width = cssSize + 'px';
     brushCursor.style.height = cssSize + 'px';
   }
 
-  // === NEW: Force cursor update after canvas becomes visible ===
   function refreshCursorAfterDisplay() {
-    // Small delay to ensure canvas has rendered dimensions
     setTimeout(() => {
       if (resultColumn.style.display === 'block') {
         updateBrushCursorSize();
@@ -381,7 +379,6 @@
     brushCursor.style.top = e.clientY + 'px';
   }
 
-  // Event listeners for cursor
   resultCanvas.addEventListener('mouseenter', showBrushCursor);
   resultCanvas.addEventListener('mouseleave', hideBrushCursor);
   resultCanvas.addEventListener('mousemove', moveBrushCursor);
@@ -392,18 +389,15 @@
     updateBrushCursorSize();
   });
   
-  // Update cursor on window resize (canvas display size may change)
   window.addEventListener('resize', () => {
     if (resultColumn.style.display === 'block') {
       updateBrushCursorSize();
     }
   });
   
-  // Initial cursor setup (will be corrected when canvas shows)
   updateBrushCursorSize();
 
   // ---------- EXACT PIXEL-ACCURATE ERASER ----------
-  // radius = brush diameter / 2 (in canvas pixels)
   function eraseCircle(x, y, radius) {
     const ctx = workingCanvas.getContext('2d');
     const imageData = ctx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
@@ -634,9 +628,31 @@
     return canvas;
   }
 
+  // ----- CACHED AI PROCESSING (with preload) -----
+  async function preloadModel() {
+    try {
+      setStatus('📦 Preloading model for faster future use...', false, true);
+      const cachedModel = await AutoModel.from_pretrained('briaai/RMBG-1.4', {
+        progress_callback: (p) => {
+          if (p.status === 'downloading') setStatus(`📥 Caching model: ${Math.round(p.progress*100)}%`, false, true);
+        }
+      });
+      const cachedProcessor = await AutoProcessor.from_pretrained('briaai/RMBG-1.4', {
+        config: { do_normalize: true, do_resize: true, size: { width: 1024, height: 1024 } }
+      });
+      model = cachedModel;
+      processor = cachedProcessor;
+      setStatus('✅ Model ready (cached). Upload an image.', false, false);
+      return true;
+    } catch (e) {
+      console.warn('Preload failed, will load on demand', e);
+      return false;
+    }
+  }
+
   async function processAIMode(file) {
     if (!model || !processor) {
-      setStatus('🧠 Loading AI engine (first time ~45MB)...', false, true);
+      setStatus('🧠 Loading AI engine (first time ~45MB, then cached)...', false, true);
       try {
         model = await AutoModel.from_pretrained('briaai/RMBG-1.4', {
           progress_callback: (p) => {
@@ -745,11 +761,8 @@
     resultCanvas.width = processed.width;
     resultCanvas.height = processed.height;
     resultCanvas.getContext('2d').drawImage(processed, 0, 0);
-    
-    // === FIXED: Show result column THEN refresh cursor ===
     resultColumn.style.display = 'block';
-    refreshCursorAfterDisplay(); // <-- Critical fix: update cursor after canvas is visible
-    
+    refreshCursorAfterDisplay();
     undoStack = []; redoStack = [];
     undoBtn.disabled = true; redoBtn.disabled = true;
     updateDisplayCanvas();
@@ -847,6 +860,9 @@
   sensitivityNumber.addEventListener('input', (e) => syncSensitivity(e.target.value));
   smoothingSlider.addEventListener('input', (e) => syncSmoothing(e.target.value));
   smoothingNumber.addEventListener('input', (e) => syncSmoothing(e.target.value));
+
+  // Start preloading the model in the background
+  preloadModel();
 </script>
 </body>
 </html>
