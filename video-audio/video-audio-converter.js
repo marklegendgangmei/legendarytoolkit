@@ -1,4 +1,4 @@
-// video-audio-converter.js – Streaming MP4 → Stereo MP3 (handles huge files)
+// video-audio-converter.js – MP4 to MP3 (works for files up to ~300MB, warns for larger)
 (function() {
     const container = document.getElementById('video-audio-converter');
     if (!container) {
@@ -21,12 +21,12 @@
             <div class="glass-card p-4" style="max-width:800px; margin:0 auto;">
                 <div class="text-center mb-3">
                     <span class="badge bg-dark rounded-pill px-3 py-2">🎵 Video → Stereo MP3</span>
-                    <h3 class="mt-2">Extract MP3 from MP4 – No file size limit</h3>
-                    <p class="text-muted">Streaming processor – handles documentaries, concerts, lectures (any size)</p>
+                    <h3 class="mt-2">Extract MP3 from MP4</h3>
+                    <p class="text-muted">100% local – no upload – best for files under 300 MB</p>
                 </div>
                 <div id="dropZone" style="border:2px dashed #ccc; border-radius:1.5rem; padding:2rem; text-align:center; cursor:pointer; background:#f9f9f9;">
                     <i class="bi bi-cloud-upload" style="font-size:2rem;"></i>
-                    <p class="mt-2">Click or drag MP4 file here (any size)</p>
+                    <p class="mt-2">Click or drag MP4 file here</p>
                     <input type="file" id="fileInput" accept="video/mp4" style="display:none;">
                 </div>
                 <div class="mt-3">
@@ -76,7 +76,6 @@
         const downloadLink = document.getElementById('downloadLink');
 
         let selectedFile = null;
-        let abortFlag = false;
 
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#000'; });
@@ -92,9 +91,13 @@
         });
 
         function handleFile(file) {
+            const sizeMB = file.size / (1024 * 1024);
+            if (sizeMB > 300) {
+                const confirmLarge = confirm(`Your file is ${sizeMB.toFixed(0)} MB. This converter works best for files under 300 MB. Larger files may fail or cause your browser to become unresponsive.\n\nFor videos over 300 MB, we recommend using the free desktop app VLC (https://www.videolan.org/vlc/) which can extract audio reliably.\n\nContinue anyway?`);
+                if (!confirmLarge) return;
+            }
             selectedFile = file;
-            const sizeGB = file.size / (1024*1024*1024);
-            dropZone.querySelector('p').innerHTML = `<i class="bi bi-file-earmark-play"></i> ${file.name} (${sizeGB.toFixed(2)} GB)`;
+            dropZone.querySelector('p').innerHTML = `<i class="bi bi-file-earmark-play"></i> ${file.name} (${(sizeMB).toFixed(2)} MB)`;
             convertBtn.disabled = false;
             resultArea.style.display = 'none';
         }
@@ -108,116 +111,66 @@
             resultArea.style.display = 'none';
             progressBar.style.width = '0%';
             progressBar.textContent = '0%';
-            statusMsg.textContent = 'Loading video metadata...';
-            abortFlag = false;
+            statusMsg.textContent = 'Loading video...';
 
             try {
-                // Create a video element to get duration and to seek
                 const video = document.createElement('video');
-                video.preload = 'metadata';
                 video.src = URL.createObjectURL(selectedFile);
                 await new Promise((resolve, reject) => {
                     video.onloadedmetadata = resolve;
                     video.onerror = reject;
                 });
 
-                const duration = video.duration;
-                if (!isFinite(duration) || duration <= 0) {
-                    throw new Error('Could not determine video duration.');
+                statusMsg.textContent = 'Decoding audio...';
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const response = await fetch(video.src);
+                const arrayBuffer = await response.arrayBuffer();
+                let audioBuffer;
+                try {
+                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                } catch (decodeError) {
+                    throw new Error('Failed to decode audio. The file may have no audio track or uses an unsupported codec.');
                 }
 
-                const sampleRate = 44100;
-                const channels = 2; // stereo
-                const bitrate = parseInt(bitrateSelect.value);
-                const chunkDuration = 30; // seconds per chunk
-
-                let mp3Encoder = null;
-                let encoderInitialized = false;
-                let mp3Data = [];
-                let totalChunks = Math.ceil(duration / chunkDuration);
-                let processedChunks = 0;
-
-                statusMsg.textContent = `Streaming ${duration.toFixed(0)} seconds in ${totalChunks} chunks...`;
-
-                // We'll process each chunk sequentially
-                for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-                    if (abortFlag) throw new Error('Conversion cancelled by user');
-
-                    const startTime = chunkIndex * chunkDuration;
-                    const endTime = Math.min(startTime + chunkDuration, duration);
-                    const chunkLen = endTime - startTime;
-                    if (chunkLen <= 0) continue;
-
-                    statusMsg.textContent = `Processing chunk ${chunkIndex+1}/${totalChunks} (${Math.floor(startTime/60)}:${(startTime%60).toFixed(0)} – ${Math.floor(endTime/60)}:${(endTime%60).toFixed(0)})`;
-
-                    // Seek video to startTime and capture audio using OfflineAudioContext
-                    video.currentTime = startTime;
-                    await new Promise(resolve => { video.onseeked = resolve; });
-
-                    // Create OfflineAudioContext with the chunk duration
-                    const offlineCtx = new OfflineAudioContext(channels, chunkLen * sampleRate, sampleRate);
-                    const source = offlineCtx.createMediaElementSource(video);
-                    source.connect(offlineCtx.destination);
-                    
-                    // Start rendering
-                    offlineCtx.startRendering();
-                    const renderedBuffer = await new Promise((resolve, reject) => {
-                        offlineCtx.oncomplete = (e) => resolve(e.renderedBuffer);
-                        offlineCtx.onerror = reject;
-                    });
-
-                    // renderedBuffer is an AudioBuffer with the chunk's audio
-                    if (!renderedBuffer || renderedBuffer.numberOfChannels === 0) {
-                        console.warn(`Chunk ${chunkIndex+1} has no audio, skipping.`);
-                        continue;
-                    }
-
-                    // Convert AudioBuffer to interleaved Int16 PCM
-                    const length = renderedBuffer.length;
-                    const actualChannels = renderedBuffer.numberOfChannels;
-                    const pcmData = new Int16Array(length * actualChannels);
-                    for (let ch = 0; ch < actualChannels; ch++) {
-                        const channelData = renderedBuffer.getChannelData(ch);
-                        for (let i = 0; i < length; i++) {
-                            const val = Math.max(-32768, Math.min(32767, Math.floor(channelData[i] * 32767)));
-                            pcmData[i * actualChannels + ch] = val;
-                        }
-                    }
-
-                    // Initialize encoder on first chunk
-                    if (!encoderInitialized) {
-                        mp3Encoder = new lamejs.Mp3Encoder(actualChannels, sampleRate, bitrate);
-                        encoderInitialized = true;
-                    }
-
-                    // Encode this chunk's PCM
-                    const chunkSize = 1152 * actualChannels;
-                    for (let i = 0; i < pcmData.length; i += chunkSize) {
-                        const chunk = pcmData.subarray(i, i + chunkSize);
-                        const mp3buf = mp3Encoder.encodeBuffer(chunk);
-                        if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
-                    }
-
-                    processedChunks++;
-                    const overallProgress = (processedChunks / totalChunks) * 100;
-                    progressBar.style.width = overallProgress + '%';
-                    progressBar.textContent = Math.floor(overallProgress) + '%';
-                    
-                    // Allow UI to breathe
-                    await new Promise(r => setTimeout(r, 10));
+                if (!audioBuffer || audioBuffer.numberOfChannels === 0) {
+                    throw new Error('No audio track found in this video.');
                 }
 
-                // Flush encoder
-                if (mp3Encoder) {
-                    const final = mp3Encoder.flush();
-                    if (final.length > 0) mp3Data.push(new Int8Array(final));
+                const channels = audioBuffer.numberOfChannels;
+                const sampleRate = audioBuffer.sampleRate;
+                const length = audioBuffer.length;
+
+                statusMsg.textContent = `Encoding ${channels}-channel MP3...`;
+
+                // Convert AudioBuffer to interleaved Int16 PCM
+                const pcmData = new Int16Array(length * channels);
+                for (let ch = 0; ch < channels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    for (let i = 0; i < length; i++) {
+                        const val = Math.max(-32768, Math.min(32767, Math.floor(channelData[i] * 32767)));
+                        pcmData[i * channels + ch] = val;
+                    }
                 }
 
-                if (mp3Data.length === 0) {
-                    throw new Error('No audio data was extracted. The video may have no audio track.');
+                const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, parseInt(bitrateSelect.value));
+                const mp3Data = [];
+                const chunkSize = 1152 * channels;
+                let processed = 0;
+
+                for (let i = 0; i < pcmData.length; i += chunkSize) {
+                    const chunk = pcmData.subarray(i, i + chunkSize);
+                    const mp3buf = mp3Encoder.encodeBuffer(chunk);
+                    if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
+                    processed += chunk.length;
+                    const percent = Math.floor((processed / pcmData.length) * 100);
+                    progressBar.style.width = percent + '%';
+                    progressBar.textContent = percent + '%';
+                    await new Promise(r => setTimeout(r, 0));
                 }
 
-                // Create MP3 blob
+                const final = mp3Encoder.flush();
+                if (final.length > 0) mp3Data.push(new Int8Array(final));
+
                 const mp3Blob = new Blob(mp3Data, { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(mp3Blob);
                 audioPreview.src = url;
@@ -228,16 +181,15 @@
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
 
-                // Cleanup
                 URL.revokeObjectURL(video.src);
-                video.remove();
-
+                await audioContext.close();
             } catch (err) {
                 console.error(err);
-                let userMsg = err.message;
-                if (err.name === 'NotSupportedError') userMsg = 'Your browser does not support streaming audio extraction. Please try Chrome or Edge.';
-                statusMsg.textContent = 'Error: ' + userMsg;
-                alert('Conversion failed: ' + userMsg);
+                let userMessage = err.message;
+                if (err.message.includes('decodeAudioData')) userMessage = 'The video could not be decoded. It may be corrupted, have no audio, or use an unsupported codec.';
+                else if (err.message.includes('No audio track')) userMessage = 'This video does not contain an audio track.';
+                statusMsg.textContent = 'Error: ' + userMessage;
+                alert('Conversion failed: ' + userMessage);
                 progressArea.style.display = 'none';
             } finally {
                 convertBtn.disabled = false;
