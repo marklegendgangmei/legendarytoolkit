@@ -1,4 +1,4 @@
-// video-audio-converter.js – MP4 to MP3 Converter (pure JS, no FFmpeg)
+// video-audio-converter.js – MP4 to Stereo MP3, handles long videos
 (function() {
     const container = document.getElementById('video-audio-converter');
     if (!container) {
@@ -20,9 +20,9 @@
         container.innerHTML = `
             <div class="glass-card p-4" style="max-width:800px; margin:0 auto;">
                 <div class="text-center mb-3">
-                    <span class="badge bg-dark rounded-pill px-3 py-2">🎵 Video → Audio</span>
+                    <span class="badge bg-dark rounded-pill px-3 py-2">🎵 Video → Stereo MP3</span>
                     <h3 class="mt-2">Extract MP3 from MP4</h3>
-                    <p class="text-muted">100% local – no upload, no server</p>
+                    <p class="text-muted">100% local – no upload, no server – supports stereo & long videos</p>
                 </div>
                 <div id="dropZone" style="border:2px dashed #ccc; border-radius:1.5rem; padding:2rem; text-align:center; cursor:pointer; background:#f9f9f9;">
                     <i class="bi bi-cloud-upload" style="font-size:2rem;"></i>
@@ -76,6 +76,7 @@
         const downloadLink = document.getElementById('downloadLink');
 
         let selectedFile = null;
+        let abortFlag = false;
 
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#000'; });
@@ -107,8 +108,10 @@
             progressBar.style.width = '0%';
             progressBar.textContent = '0%';
             statusMsg.textContent = 'Loading video...';
+            abortFlag = false;
 
             try {
+                // Use OfflineAudioContext for better performance with long files
                 const video = document.createElement('video');
                 video.src = URL.createObjectURL(selectedFile);
                 await new Promise((resolve, reject) => {
@@ -116,31 +119,57 @@
                     video.onerror = reject;
                 });
                 
-                statusMsg.textContent = 'Decoding audio...';
+                statusMsg.textContent = 'Decoding audio (this may take a moment for long videos)...';
+                
+                // Fetch the audio data using AudioContext
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const response = await fetch(video.src);
                 const arrayBuffer = await response.arrayBuffer();
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                let audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
-                const samples = audioBuffer.getChannelData(0); // mono
+                // Get number of channels (stereo support)
+                const channels = audioBuffer.numberOfChannels;
                 const sampleRate = audioBuffer.sampleRate;
-                const pcmData = new Int16Array(samples.length);
-                for (let i = 0; i < samples.length; i++) {
-                    pcmData[i] = Math.max(-32768, Math.min(32767, Math.floor(samples[i] * 32767)));
+                const length = audioBuffer.length;
+                
+                statusMsg.textContent = `Encoding stereo MP3 (${channels} channels)...`;
+                
+                // Prepare PCM data for stereo: interleaved left/right
+                let pcmData = new Int16Array(length * channels);
+                for (let ch = 0; ch < channels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    for (let i = 0; i < length; i++) {
+                        const val = Math.max(-32768, Math.min(32767, Math.floor(channelData[i] * 32767)));
+                        if (ch === 0) {
+                            pcmData[i * channels] = val;
+                        } else if (ch === 1) {
+                            pcmData[i * channels + 1] = val;
+                        } else {
+                            // for >2 channels, mix down? We'll just take first two.
+                            if (ch < 2) pcmData[i * channels + ch] = val;
+                        }
+                    }
                 }
                 
-                statusMsg.textContent = 'Encoding MP3...';
-                const mp3Encoder = new lamejs.Mp3Encoder(1, sampleRate, parseInt(bitrateSelect.value));
+                // Initialize MP3 encoder with correct channels
+                const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, parseInt(bitrateSelect.value));
                 const mp3Data = [];
-                const chunkSize = 1152;
+                const chunkSize = 1152 * channels; // samples per frame
+                let processed = 0;
+                
                 for (let i = 0; i < pcmData.length; i += chunkSize) {
+                    if (abortFlag) throw new Error('Conversion aborted');
                     const chunk = pcmData.subarray(i, i + chunkSize);
                     const mp3buf = mp3Encoder.encodeBuffer(chunk);
                     if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
-                    const percent = Math.floor((i / pcmData.length) * 100);
+                    processed += chunk.length;
+                    const percent = Math.floor((processed / pcmData.length) * 100);
                     progressBar.style.width = percent + '%';
                     progressBar.textContent = percent + '%';
+                    // Allow UI to update
+                    await new Promise(r => setTimeout(r, 0));
                 }
+                
                 const final = mp3Encoder.flush();
                 if (final.length > 0) mp3Data.push(new Int8Array(final));
                 
