@@ -2,6 +2,7 @@
 // YouTube Chapter Maker - Professional Tool for Blogger
 // Fully self-contained: injects required CSS and builds the app
 // Dependencies: Bootstrap 5 + Icons (already on your blog)
+// Container ID: YouTube-Chapter-Maker
 // ============================================================
 
 (function() {
@@ -45,11 +46,11 @@
 
     // ----- TOOL INITIALIZATION -----
     function initYouTubeChapterMaker() {
-        const container = document.getElementById('tool-name-app');
+        const container = document.getElementById('YouTube-Chapter-Maker');
         if (!container) {
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', () => {
-                    const retryContainer = document.getElementById('tool-name-app');
+                    const retryContainer = document.getElementById('YouTube-Chapter-Maker');
                     if (retryContainer) buildApp(retryContainer);
                 });
             }
