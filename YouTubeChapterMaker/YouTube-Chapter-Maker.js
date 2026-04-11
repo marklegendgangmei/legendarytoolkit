@@ -18,6 +18,7 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
         .form-control:focus { border-color: #0a0a0a; box-shadow: 0 0 0 3px rgba(10,10,10,0.1); }
         .chapter-list-item { transition: all 0.2s; }
         .chapter-list-item:hover { background: rgba(0,0,0,0.02); }
+        .debug-section { font-size: 0.8rem; }
     `;
     if (!document.getElementById('yt-chapter-maker-styles')) {
         const styleTag = document.createElement('style');
@@ -81,9 +82,8 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
                 <!-- Optional manual description paste (fallback / custom) -->
                 <div class="bg-light bg-opacity-50 p-3 rounded-4">
                     <label class="fw-semibold"><i class="bi bi-file-text"></i> Or Paste Description Manually</label>
-                    <textarea id="description-textarea" rows="3" class="form-control mt-1" placeholder="Paste any YouTube description here...&#10;Chapters like:&#10;0:00 Intro&#10;2:15 Main topic"></textarea>
+                    <textarea id="description-textarea" rows="4" class="form-control mt-1" placeholder="Paste any YouTube description here...&#10;Chapters like:&#10;0:00 Intro&#10;2:15 Main topic"></textarea>
                     <button id="extract-chapters-btn" class="btn btn-outline-custom btn-modern mt-2"><i class="bi bi-magic"></i> Extract Chapters from Pasted Text</button>
-                    <div class="form-text">Useful if API key is missing or you want to edit chapters from a custom source.</div>
                 </div>
 
                 <hr>
@@ -245,31 +245,54 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
             navigator.clipboard.writeText(text).then(() => showMessage("Copied to clipboard!")).catch(() => showMessage("Copy failed", "danger"));
         }
 
-        // Extract chapters from a text string (used by both API and manual)
+        // ----- IMPROVED CHAPTER EXTRACTION (line by line) -----
         function extractChaptersFromText(description, sourceName = "text") {
             if (!description || !description.trim()) {
                 showMessage(`No description ${sourceName} to extract from.`, "warning");
                 return false;
             }
-            const regex = /(\d{1,2}:?\d{1,2}:\d{2}|\d{1,2}:\d{2})\s+(.+)/g;
-            let matches = [...description.matchAll(regex)];
-            if (matches.length === 0) {
-                showMessage(`No timestamps found in ${sourceName}. Use format like '1:30 Introduction'.`, "danger");
-                return false;
-            }
+            
+            // Split into lines and process each line
+            const lines = description.split(/\r?\n/);
+            const timestampRegex = /^(\d{1,2}:?\d{1,2}:\d{2}|\d{1,2}:\d{2})\s+(.+)$/;
             let newChapters = [];
-            for (let match of matches) {
-                let timeStr = match[1];
-                let title = match[2].trim();
-                let seconds = parseTimeToSeconds(timeStr);
-                if (seconds !== null && title) {
-                    newChapters.push({ seconds, title });
+            
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                
+                const match = line.match(timestampRegex);
+                if (match) {
+                    let timeStr = match[1];
+                    let title = match[2].trim();
+                    let seconds = parseTimeToSeconds(timeStr);
+                    if (seconds !== null && title) {
+                        newChapters.push({ seconds, title });
+                    }
                 }
             }
+            
             if (newChapters.length === 0) {
-                showMessage(`Could not parse any valid timestamps from ${sourceName}.`, "danger");
+                // Fallback: try to find timestamps anywhere in the line (less strict)
+                const looseRegex = /(\d{1,2}:?\d{1,2}:\d{2}|\d{1,2}:\d{2})\s+(.+?)(?=\n|$)/g;
+                let looseMatches = [...description.matchAll(looseRegex)];
+                for (let match of looseMatches) {
+                    let timeStr = match[1];
+                    let title = match[2].trim();
+                    let seconds = parseTimeToSeconds(timeStr);
+                    if (seconds !== null && title && !newChapters.some(c => c.seconds === seconds)) {
+                        newChapters.push({ seconds, title });
+                    }
+                }
+            }
+            
+            if (newChapters.length === 0) {
+                showMessage(`No timestamps found in ${sourceName}. Use format like '1:30 Introduction' at start of line.`, "danger");
                 return false;
             }
+            
+            // Sort and add unique chapters
+            newChapters.sort((a,b) => a.seconds - b.seconds);
             let existingSeconds = new Set(chaptersArray.map(c => c.seconds));
             let added = 0;
             for (let ch of newChapters) {
@@ -291,12 +314,11 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
             extractChaptersFromText(description, "pasted text");
         }
 
-        // ----- YOUTUBE API INTEGRATION -----
+        // ----- YOUTUBE API INTEGRATION (fixed) -----
         async function fetchVideoWithAPI() {
             let urlOrId = document.getElementById('chapter-maker-url').value.trim();
             if (!urlOrId) { showMessage("Enter a YouTube URL or ID.", "warning"); return; }
             
-            // Extract video ID
             let videoId = null;
             if (urlOrId.includes('youtube.com') || urlOrId.includes('youtu.be')) {
                 let match = urlOrId.match(/(?:youtu\.be\/|v=|\/v\/|embed\/|shorts\/)([^&?#]+)/);
@@ -305,18 +327,14 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
             
             if (!videoId) { showMessage("Invalid YouTube URL or ID.", "danger"); return; }
             
-            // Show loading indicator on button
             const fetchBtn = document.getElementById('chapter-maker-fetch-btn');
             const originalText = fetchBtn.innerHTML;
             fetchBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Fetching...';
             fetchBtn.disabled = true;
             
             try {
-                // 1. Get video details (title, description) using API key
                 if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'YOUR_API_KEY_HERE') {
                     showMessage("YouTube API key not configured. Please edit the script and add your API key at the top.", "danger");
-                    fetchBtn.innerHTML = originalText;
-                    fetchBtn.disabled = false;
                     return;
                 }
                 
@@ -326,15 +344,11 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
                 
                 if (data.error) {
                     showMessage(`API Error: ${data.error.message}. Check your API key and quota.`, "danger");
-                    fetchBtn.innerHTML = originalText;
-                    fetchBtn.disabled = false;
                     return;
                 }
                 
                 if (!data.items || data.items.length === 0) {
                     showMessage("Video not found. It may be private or deleted.", "danger");
-                    fetchBtn.innerHTML = originalText;
-                    fetchBtn.disabled = false;
                     return;
                 }
                 
@@ -348,20 +362,22 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
                 document.getElementById('video-watch-link').href = `https://www.youtube.com/watch?v=${videoId}`;
                 document.getElementById('video-info-panel').style.display = 'block';
                 
-                // 2. Extract chapters from the description
+                // Also fill the textarea with the description for transparency
+                document.getElementById("description-textarea").value = description;
+                
+                // Extract chapters from the description
                 if (description) {
                     const extracted = extractChaptersFromText(description, "video description");
                     if (extracted) {
                         showMessage(`✅ Successfully extracted chapters from "${videoTitle}"!`, "success");
                     } else {
-                        showMessage(`Video description found, but no chapters (timestamps) detected. You can add them manually.`, "info");
+                        showMessage(`Video description found, but no chapters (timestamps) detected. You can add them manually or paste a different description.`, "info");
+                        // Show a preview of the first 200 chars to help debug
+                        console.log("Description preview:", description.substring(0, 200));
                     }
                 } else {
                     showMessage("Video has no description. Add chapters manually.", "info");
                 }
-                
-                // Also populate the manual textarea with the description for reference
-                document.getElementById("description-textarea").value = description;
                 
             } catch (err) {
                 console.error(err);
@@ -370,6 +386,16 @@ const YOUTUBE_API_KEY = 'AIzaSyCWTYFHABNctNztMeneoyvu_EJDeZM7lG4';  // <-- REPLA
                 fetchBtn.innerHTML = originalText;
                 fetchBtn.disabled = false;
             }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
         }
 
         // Bind events
